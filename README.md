@@ -2,7 +2,6 @@
 
 ## Citing SearchFair
 
-
 If you use this software please cite the following publication:
 ```
 @inproceedings{lohaus2020,
@@ -17,3 +16,5 @@ If you use this software please cite the following publication:
 
 
 ## Examples
+
+We provide the following examples. 
