@@ -2,19 +2,21 @@
 __all__ = ['SearchFair', 'ConstantClassifier']
 
 from sklearn.model_selection import KFold
+from sklearn.base import BaseEstimator
 import sklearn.metrics.pairwise as kernels
+from sklearn.metrics import confusion_matrix
 import numpy as np
 import cvxpy as cp
 import random
 
 
-class SearchFair():
-	"""SearchFair
+class SearchFair(BaseEstimator):
+    """SearchFair
 
-	Parameters
-	----------
-	fairness_notions: string
-		The name of the fairness notion that the classifier should respect. 'DDP' or 'DEO' can be used.
+    Parameters
+    ----------
+    fairness_notions: string
+        The name of the fairness notion that the classifier should respect. 'DDP' or 'DEO' can be used.
     fairness_regularizer: string
         The name of the fairness relaxation that is used as a regularizer. It can be 'linear', or 'wu'. For 'wu', the 'wu_bound' can be chosen.
     wu_bound: string
@@ -25,8 +27,8 @@ class SearchFair():
         The kind of kernel that is used. It can be 'linear', 'rbf' or 'poly'. For 'rbf' and 'poly', the parameter gamma can be used.
     gamma: float
         For kernel='rbf', gamma is the kernel width, for kernel='poly', gamma is the degree.
-	loss_name: string
-		The name of the loss used. Possible values: 'hinge', 'logistic', 'squared', 'exponential'
+    loss_name: string
+        The name of the loss used. Possible values: 'hinge', 'logistic', 'squared', 'exponential'
     lambda_min: float
         The value of lambda_min for the start of the binary search.
     lambda_max: float
@@ -43,27 +45,22 @@ class SearchFair():
         The solver that is used by cvxpy. It can be 'SCS' or 'ECOS'.
     verbose: boolean
 
-	Attributes
-	----------
-	alpha_opt: numpy array
-		An array containing the trained weights for each reasonable point.
-	reason_pts_index: numpy array
-		An array containing the indices of the reasonable points in the training data.
+    Attributes
+    ----------
+    coef_: numpy array
+        An array containing the trained weights for each reasonable point.
+    reason_pts_index: numpy array
+        An array containing the indices of the reasonable points in the training data.
 
     Notes
     ----------
 
-	"""
-    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_min=0, lambda_max=1,
-                    max_iter=3000, reason_points=0.7, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
+    """
+
+    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_min=0, lambda_max=1, max_iter=3000, reason_points=0.7, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
+
         self.reg_beta = reg_beta
-        self.fairness_lambda = 0
-        self.x_train = None
-        self.y_train = None
-        self.s_train = None
-        self.reason_pts_index = None
         self.fairness_notion = fairness_notion
-        self.alpha_opt = None
         self.max_iter = max_iter
         self.max_search_iter = max_search_iter
         self.solver = solver
@@ -73,64 +70,32 @@ class SearchFair():
         self.lambda_min, self.lambda_max = lambda_min, lambda_max
         self.wu_bound = wu_bound
         self.fairness_regularizer = fairness_regularizer
+        self.wu_bound = wu_bound
+        self.gamma = gamma
+        self.loss_name = loss_name
+        self.kernel = kernel
 
-        if loss_name == 'logistic':
-            self.loss_func = lambda z: cp.logistic(-z)
-        elif loss_name == 'hinge':
-            self.loss_func = lambda z: cp.pos(1.0 - z)
-        elif loss_name == 'squared':
-            self.loss_func = lambda z: cp.square(-z)
-        elif loss_name == 'exponential':
-            self.loss_func = lambda z: cp.exp(-z)
-        else:
-            print('Using default loss: hinge loss.')
-            self.loss_func = lambda z: cp.pos(1.0 - z)
-
-        if kernel == 'rbf':
-            self.kernel_function = lambda X, Y: kernels.rbf_kernel(X, Y, gamma)
-        elif kernel == 'poly':
-            self.kernel_function = lambda X, Y: kernels.polynomial_kernel(X, Y, degree=gamma)
-        elif kernel == 'linear':
-            self.kernel_function = lambda X, Y: kernels.linear_kernel(X, Y) + 1
-        else:
-            self.kernel_function = kernel
-
-        if wu_bound == 'logistic':
-            self.cvx_kappa = lambda z: cp.logistic(z)
-            self.cvx_delta = lambda z: 1 - cp.logistic(-z)
-        elif wu_bound == 'hinge':
-            self.cvx_kappa = lambda z: cp.pos(1 + z)
-            self.cvx_delta = lambda z: 1 - cp.pos(1 - z)
-        elif wu_bound == 'squared':
-            self.cvx_kappa = lambda z: cp.square(1 + z)
-            self.cvx_delta = lambda z: 1 - cp.square(1 - z)
-        elif wu_bound == 'exponential':
-            self.cvx_kappa = lambda z: cp.exp(z)
-            self.cvx_delta = lambda z: 1 - cp.exp(-z)
-        else:
-            print('Using default bound with hinge.')
-            self.cvx_kappa = lambda z: cp.pos(1 + z)
-            self.cvx_delta = lambda z: cp.pos(1 + z)
-
-def fit(self, x_train, y_train, s_train):
-		"""Fits SearchFair on the given training data.
+    def fit(self, x_train, y_train, s_train=None):
+        """Fits SearchFair on the given training data.
 
         Parameters
         ----------
-		x_train: numpy array
+        x_train: numpy array
             The features of the training data with shape=(number_points,number_features).
-		y_train: numpy array
+        y_train: numpy array
             The class labels of the training data with shape=(number_points,).
-		s_train: numpy array
+        s_train: numpy array
             The binary sensitive attributes of the training data with shape=(number_points,).
 
         Returns
         ----------
-		self: object
-		"""
+        self: object
+        """
+
         self.x_train = x_train
         self.y_train = y_train
         self.s_train = s_train
+
         if self.verbose: print("Preprocessing...")
         self.preprocess()
 
@@ -145,13 +110,13 @@ def fit(self, x_train, y_train, s_train):
             else:
                 self.fair_reg_cparam.value = reg
             self.optimize()
-            DDP, DEO = self.compute_fairness_measures(np.sign(self.predict(x_train)), y_train, s_train)
+            DDP, DEO = self.compute_fairness_measures(self.predict(x_train), y_train, s_train)
             if self.fairness_notion == 'DDP':
                 fair_value = DDP
             else:
                 fair_value = DEO
             if self.verbose: print("Obtained:",self.fairness_notion, "= %0.3f with lambda = %0.05f" % (fair_value, reg))
-            return fair_value, self.alpha_opt.copy()
+            return fair_value, self.coef_.copy()
 
         criterion = False
 
@@ -197,7 +162,7 @@ def fit(self, x_train, y_train, s_train):
                 search_iter += 1
 
         if self.verbose: print("Found Lambda: %0.08f" % best_lbda)
-        self.alpha_opt = best_alpha.copy()
+        self.coef_ = best_alpha.copy()
 
         return self
 
@@ -215,10 +180,49 @@ def fit(self, x_train, y_train, s_train):
             The predicted class labels with shape=(number_points,).
         """
         kernel_matr = self.kernel_function(x_test, self.x_train[self.reason_pts_index])
-        y_hat = np.dot(self.alpha_opt, np.transpose(kernel_matr))
-        return y_hat
+        y_hat = np.dot(self.coef_, np.transpose(kernel_matr))
+        return np.sign(y_hat)
 
     def preprocess(self):
+        self.coef_ = None
+        self.fairness_lambda = 0
+        if self.loss_name == 'logistic':
+            self.loss_func = lambda z: cp.logistic(-z)
+        elif self.loss_name == 'hinge':
+            self.loss_func = lambda z: cp.pos(1.0 - z)
+        elif self.loss_name == 'squared':
+            self.loss_func = lambda z: cp.square(-z)
+        elif self.loss_name == 'exponential':
+            self.loss_func = lambda z: cp.exp(-z)
+        else:
+            print('Using default loss: hinge loss.')
+            self.loss_func = lambda z: cp.pos(1.0 - z)
+
+        if self.kernel == 'rbf':
+            self.kernel_function = lambda X, Y: kernels.rbf_kernel(X, Y, self.gamma)
+        elif self.kernel == 'poly':
+            self.kernel_function = lambda X, Y: kernels.polynomial_kernel(X, Y, degree=self.gamma)
+        elif self.kernel == 'linear':
+            self.kernel_function = lambda X, Y: kernels.linear_kernel(X, Y) + 1
+        else:
+            self.kernel_function = kernel
+
+        if self.wu_bound == 'logistic':
+            self.cvx_kappa = lambda z: cp.logistic(z)
+            self.cvx_delta = lambda z: 1 - cp.logistic(-z)
+        elif self.wu_bound == 'hinge':
+            self.cvx_kappa = lambda z: cp.pos(1 + z)
+            self.cvx_delta = lambda z: 1 - cp.pos(1 - z)
+        elif self.wu_bound == 'squared':
+            self.cvx_kappa = lambda z: cp.square(1 + z)
+            self.cvx_delta = lambda z: 1 - cp.square(1 - z)
+        elif self.wu_bound == 'exponential':
+            self.cvx_kappa = lambda z: cp.exp(z)
+            self.cvx_delta = lambda z: 1 - cp.exp(-z)
+        else:
+            print('Using default bound with hinge.')
+            self.cvx_kappa = lambda z: cp.pos(1 + z)
+            self.cvx_delta = lambda z: cp.pos(1 + z)
 
         self.nmb_pts = len(self.s_train)
         self.nmb_unprotected = np.sum(self.s_train == 1)
@@ -301,11 +305,9 @@ def fit(self, x_train, y_train, s_train):
 
         print('status %s ' % self.prob.status)
         print('value %s ' % self.prob.value)
-        self.alpha_opt = self.alpha_var.value.squeeze()
+        self.coef_ = self.alpha_var.value.squeeze()
 
-
-
-    def compute_fairness_measures(y_predicted, y_true, sens_attr):
+    def compute_fairness_measures(self, y_predicted, y_true, sens_attr):
         """Compute value of demographic parity and equality of opportunity for given predictions.
 
         Parameters
@@ -324,14 +326,52 @@ def fit(self, x_train, y_train, s_train):
         DEO: float
             The difference of equality of opportunity.
         """
-        positive_rate_prot = get_positive_rate(y_predicted[sens_attr==-1], y_true[sens_attr==-1])
-        positive_rate_unprot = get_positive_rate(y_predicted[sens_attr==1], y_true[sens_attr==1])
-        true_positive_rate_prot = get_true_positive_rate(y_predicted[sens_attr==-1], y_true[sens_attr==-1])
-        true_positive_rate_unprot = get_true_positive_rate(y_predicted[sens_attr==1], y_true[sens_attr==1])
+        positive_rate_prot = self.get_positive_rate(y_predicted[sens_attr==-1], y_true[sens_attr==-1])
+        positive_rate_unprot = self.get_positive_rate(y_predicted[sens_attr==1], y_true[sens_attr==1])
+        true_positive_rate_prot = self.get_true_positive_rate(y_predicted[sens_attr==-1], y_true[sens_attr==-1])
+        true_positive_rate_unprot = self.get_true_positive_rate(y_predicted[sens_attr==1], y_true[sens_attr==1])
         DDP = positive_rate_unprot - positive_rate_prot
         DEO = true_positive_rate_unprot - true_positive_rate_prot
 
         return DDP, DEO
+
+    def get_positive_rate(self, y_predicted, y_true):
+        """Compute the positive rate for given predictions of the class label.
+
+        Parameters
+        ----------
+        y_predicted: numpy array
+            The predicted class labels of shape=(number_points,).
+        y_true: numpy array
+            The true class labels of shape=(number_points,).
+
+        Returns
+        ---------
+        pr: float
+            The positive rate.
+        """
+        tn, fp, fn, tp = confusion_matrix(y_true, y_predicted).ravel()
+        pr = (tp+fp) / (tp+fp+tn+fn)
+        return pr
+
+    def get_true_positive_rate(self, y_predicted, y_true):
+        """Compute the true positive rate for given predictions of the class label.
+
+        Parameters
+        ----------
+        y_predicted: numpy array
+            The predicted class labels of shape=(number_points,).
+        y_true: numpy array
+            The true class labels of shape=(number_points,).
+
+        Returns
+        ---------
+        tpr: float
+            The true positive rate.
+        """
+        tn, fp, fn, tp = confusion_matrix(y_true, y_predicted).ravel()
+        tpr = tp / (tp+fn)
+        return tpr
 
 class ConstantClassifier():
 
