@@ -107,8 +107,6 @@ class SearchFair(BaseEstimator):
             self.fairness_lambda = reg
             if bound is not None:
                 self.construct_problem(bound=bound)
-            else:
-                self.fair_reg_cparam.value = reg
             self.optimize()
             DDP, DEO = self.compute_fairness_measures(self.predict(x_train), y_train, s_train)
             if self.fairness_notion == 'DDP':
@@ -222,7 +220,7 @@ class SearchFair(BaseEstimator):
         else:
             print('Using default bound with hinge.')
             self.cvx_kappa = lambda z: cp.pos(1 + z)
-            self.cvx_delta = lambda z: cp.pos(1 + z)
+            self.cvx_delta = lambda z: 1 - cp.pos(1 - z)
 
         self.nmb_pts = len(self.s_train)
         self.nmb_unprotected = np.sum(self.s_train == 1)
@@ -236,12 +234,16 @@ class SearchFair(BaseEstimator):
 
         # Create weights that are necessary for the fairness constraint
         if self.fairness_notion == 'DDP':
+            normalizer = self.nmb_pts
             self.weight_vector = np.array(
                 [1.0 / self.prob_prot if self.s_train[i] == -1 else 1.0 / self.prob_unprot for i in range(len(self.s_train))]).reshape(-1,1)
+            self.weight_vector = (1 / normalizer) * self.weight_vector
         elif self.fairness_notion == 'DEO':
+            normalizer = self.nmb_pos
             self.weight_vector = np.array(
                 [1.0 / self.prob_prot_pos if self.s_train[i] == -1 else 1.0 / self.prob_unprot_pos for i in range(len(self.s_train))]).reshape(-1, 1)
             self.weight_vector = 0.5 * (self.y_train.reshape(-1, 1) + 1) * self.weight_vector
+            self.weight_vector = (1 / normalizer) * self.weight_vector
 
         # Choose random reasonable points
         if self.reason_points <= 1:
@@ -258,42 +260,54 @@ class SearchFair(BaseEstimator):
         self.kernel_matrix = cp.Parameter(shape=(self.x_train.shape[0], len(self.reason_pts_index)))
         self.fair_reg_cparam = cp.Parameter(nonneg=True)
 
+
         # Form SVM with L2 regularization
         if self.fairness_lambda == 0:
-            self.loss = cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix * self.alpha_var))) + self.reg_beta * self.nmb_pts * cp.square(
+            self.loss = cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var))) + self.reg_beta * self.nmb_pts * cp.square(
                 cp.norm(self.alpha_var, 2))
         else:
-            sy_hat = cp.multiply(self.s_train.reshape(-1, 1), self.kernel_matrix * self.alpha_var)
-            self.fair_reg_cparam.value = self.fairness_lambda
-            if self.fairness_notion == 'DDP':
-                normalizer = self.nmb_pts
-            elif self.fairness_notion == 'DEO':
-                normalizer = self.nmb_pos
+            sy_hat = cp.multiply(self.s_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var)
 
             if self.fairness_regularizer == 'wu':
                 if bound == 'upper':
-                    fairness_relaxation = (1 / normalizer) * cp.sum(cp.multiply(self.weight_vector, self.cvx_kappa(sy_hat))) - 1
+                    fairness_relaxation = cp.sum(cp.multiply(self.weight_vector, self.cvx_kappa(sy_hat))) - 1
                 else:
-                    fairness_relaxation = -1 * ((1 / normalizer) * cp.sum(cp.multiply(self.weight_vector, self.cvx_delta(sy_hat))) - 1)
+                    fairness_relaxation = -1 * cp.sum(cp.multiply(self.weight_vector, self.cvx_delta(sy_hat))) - 1
+
+
             elif self.fairness_regularizer == 'linear':
                 if bound == 'upper':
-                    fairness_relaxation = (1 / normalizer) * cp.sum(cp.multiply(self.weight_vector, self.kernel_matrix * self.alpha_var))
+                    fairness_relaxation = cp.sum(cp.multiply(self.weight_vector, self.kernel_matrix @ self.alpha_var))
                 else:
-                    fairness_relaxation = -1*((1 / normalizer) * cp.sum(cp.multiply(self.weight_vector, self.kernel_matrix * self.alpha_var)))
+                    fairness_relaxation = -1 * cp.sum(cp.multiply(self.weight_vector, self.kernel_matrix @ self.alpha_var))
 
             if self.reg_beta == 0:
-                self.loss = (1/self.nmb_pts)*cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix * self.alpha_var))) + \
+                self.loss = (1/self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var))) + \
                                 self.fair_reg_cparam * fairness_relaxation
             else:
-                self.loss = (1 / self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix * self.alpha_var))) + \
-                self.fair_reg_cparam * fairness_relaxation + self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
+                part1 = (1 / self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var)))
+                part2 = self.fair_reg_cparam * fairness_relaxation
+                part3 = self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
+
+                self.loss = part1+part2+part3
+
+                print("Is part1 DPP? ", part1.is_dcp(dpp=True))
+                print("Is part 2 DPP? ", part2.is_dcp(dpp=True))
+                print("Is relax DPP? ", fairness_relaxation.is_dcp(dpp=True))
+                print("Is part 3 DPP? ", part3.is_dcp(dpp=True))
+
 
         self.prob = cp.Problem(cp.Minimize(self.loss))
+        print("Bound is", bound)
+        print("and fairness reg is ", self.fairness_lambda )
+        print("Is DPP? ", self.prob.is_dcp(dpp=True))
+        print("Is DCP? ", self.prob.is_dcp(dpp=False))
 
     def optimize(self):
 
         self.K_sim = self.kernel_function(self.x_train, self.x_train[self.reason_pts_index])
         self.kernel_matrix.value = self.K_sim
+        self.fair_reg_cparam.value = self.fairness_lambda
 
         if self.solver == 'SCS':
             self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
@@ -302,9 +316,9 @@ class SearchFair(BaseEstimator):
                 self.prob.solve(solver=cp.ECOS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
             except Exception as e:
                 self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
-
-        print('status %s ' % self.prob.status)
-        print('value %s ' % self.prob.value)
+        if self.verbose:
+            print('status %s ' % self.prob.status)
+            print('value %s ' % self.prob.value)
         self.coef_ = self.alpha_var.value.squeeze()
 
     def compute_fairness_measures(self, y_predicted, y_true, sens_attr):

@@ -26,8 +26,8 @@ def print_data_stats(sens_attr, class_labels):
     print("Total data points: %d" % len(sens_attr))
     print("# non-protected examples: %d" % non_prot_all)
     print("# protected examples: %d" % prot_all)
-    print("Non-protected in positive class: %d (%0.1f%%)" % (non_prot_pos, non_prot_pos * 100.0 / non_prot_all))
-    print("Protected in positive class: %d (%0.1f%%)" % (prot_pos, prot_pos * 100.0 / prot_all))
+    print("# non-protected examples in positive class: %d (%0.1f%%)" % (non_prot_pos, non_prot_pos * 100.0 / non_prot_all))
+    print("# protected examples in positive class: %d (%0.1f%%)" % (prot_pos, prot_pos * 100.0 / prot_all))
 
 def get_positive_rate(y_predicted, y_true):
     """Compute the positive rate for given predictions of the class label.

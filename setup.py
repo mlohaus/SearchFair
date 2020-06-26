@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="SearchFair",
+    name="searchfair",
     version="0.0.1",
     author="mlohaus",
     author_email="michael.lohaus@uni-tuebingen.de",
@@ -22,8 +22,11 @@ setuptools.setup(
         "Programming Language :: Python :: 3"
     ],
     install_requires=[
-        "numpy>=1.15.4",
-        "scikit-learn>=0.21.2"
+        "numpy>=1.18.1",
+        "cvxpy>=1.1.0",
+        "scikit-learn>=0.22.1",
+        "pandas>=1.0.1",
+        "matplotlib>=3.1.3"
     ],
-    python_requires=">=3.6"
+    python_requires=">=3.7"
 )
