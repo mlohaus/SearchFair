@@ -96,7 +96,9 @@ class SearchFair(BaseEstimator):
         self.y_train = y_train
         self.s_train = s_train
 
-        if self.verbose: print("Preprocessing...")
+        if self.verbose:
+            print("Preprocessing...")
+            print("Compilation of CVXPY (might take a while for v1.1)")
         self.preprocess()
 
         lbda_min, lbda_max = self.lambda_min, self.lambda_max
@@ -294,8 +296,7 @@ class SearchFair(BaseEstimator):
                                 self.fair_reg_cparam * fairness_relaxation
             else:
                 self.loss = (1 / self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var))) + \
-                            self.fair_reg_cparam * fairness_relaxation +  \
-                            self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
+                            self.fair_reg_cparam * fairness_relaxation + self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
 
         self.prob = cp.Problem(cp.Minimize(self.loss))
 

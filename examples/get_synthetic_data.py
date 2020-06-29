@@ -1,14 +1,10 @@
 import math
 import numpy as np
-import matplotlib.pyplot as plt # for plotting stuff
+import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from random import seed, shuffle, sample
-from scipy.stats import multivariate_normal # generating synthetic data
-from scipy.stats import norm as univariate_normal # generating synthetic data
-
-SEED = 1122334477
-seed(SEED) # set the random seed so that the random permutations can be reproduced again
-np.random.seed(SEED)
+from scipy.stats import multivariate_normal
+from scipy.stats import norm as univariate_normal
 
 plt.rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
 ## for Palatino and other serif fonts use:
@@ -58,16 +54,20 @@ def get_gaussian_data(n_samples=None, plot_data=False):
     mu32, sigma32 = [1, 4], [[0.5, 0], [0, 0.5]]  # positive class, positive sens attr
     mu4, sigma4 = [2.5, 2.5], [[1, 0], [0, 1]] # positive class, negative sens attr
 
-    nv1, X1, y1, s1 = gen_gaussian(mu1, sigma1, -1, -1,  int(np.floor(n_samples/4)))  # negative class, negative sens attr
-    nv2, X2, y2, s2 = gen_gaussian(mu2, sigma2, -1, 1, int(np.ceil(n_samples / 4)))  # negative class, positive sens attr
+    nmb_1, nmb_2 = int(np.floor(n_samples/ 4)), int(np.floor(n_samples/ 8))
 
-    nv3, X3, y3, s3 = gen_gaussian(mu3, sigma3, 1, -1, int(np.floor(n_samples/8)))  # positive class, negative sens attr
-    nv32, X32, y32, s32 = gen_gaussian(mu32, sigma32, 1, -1, int(np.floor(n_samples / 8)))  # positive class, negative sens attr
+    gap = n_samples - 3 * nmb_1 - 2 * nmb_2
+
+    nv1, X1, y1, s1 = gen_gaussian(mu1, sigma1, -1, -1,  nmb_1)  # negative class, negative sens attr
+    nv2, X2, y2, s2 = gen_gaussian(mu2, sigma2, -1, 1, nmb_1)  # negative class, positive sens attr
+
+    nv3, X3, y3, s3 = gen_gaussian(mu3, sigma3, 1, -1, nmb_2)  # positive class, negative sens attr
+    nv32, X32, y32, s32 = gen_gaussian(mu32, sigma32, 1, -1, nmb_2)  # positive class, negative sens attr
     X3 = np.vstack((X3, X32))
     y3 = np.hstack((y3, y32))
     s3 = np.hstack((s3, s32))
 
-    nv4, X4, y4, s4 = gen_gaussian(mu4, sigma4, 1, 1, int(np.ceil(n_samples/4)))  # positive class, positive sens attr
+    nv4, X4, y4, s4 = gen_gaussian(mu4, sigma4, 1, 1, nmb_1+gap)  # positive class, positive sens attr
 
 
     # join the posisitve and negative class clusters
