@@ -113,15 +113,16 @@ class SearchFair(BaseEstimator):
                 fair_value = DDP
             else:
                 fair_value = DEO
-            if self.verbose: print("Obtained:",self.fairness_notion, "= %0.3f with lambda = %0.05f" % (fair_value, reg))
+            if self.verbose: print("Obtained:",self.fairness_notion, "= %0.4f with lambda = %0.4f" % (fair_value, reg))
             return fair_value, self.coef_.copy()
 
         criterion = False
 
         bound = 'upper' # even though an upper bound is specified, since lambda_min is 0, it falls away
+        if self.verbose: print("Testing lambda_min: %0.2f" % lbda_min)
         min_fair_measure, min_alpha = learn(lbda_min, bound=bound)
         if np.sign(min_fair_measure) < 0: bound = 'lower'
-        if self.verbose: print('The bound used is ', bound)
+        if self.verbose: print("Testing lambda_max: %0.2f" % lbda_max)
         max_fair_measure, max_alpha = learn(lbda_max, bound)
 
         if np.abs(min_fair_measure) < np.abs(max_fair_measure):
@@ -130,17 +131,20 @@ class SearchFair(BaseEstimator):
         else:
             best_lbda, best_fair_measure = lbda_max, max_fair_measure
             best_alpha = max_alpha
-        if  best_fair_measure == 0:
-            print("Classifier is fair enough with lambda = {:.9f}".format(best_lbda))
+        if  np.abs(best_fair_measure) < self.stop_criterion:
+            print("Classifier is fair enough with lambda = {:.4f}".format(best_lbda))
         elif np.sign(min_fair_measure) == np.sign(max_fair_measure):
             print('Fairness value has the same sign for lambda_min and lambda_max.')
             print('Either try a different fairness regularizer or change the values of lambda_min and lambda_max') # Possibly, there could be a few more tries by reducing lambda.
         else:
             search_iter = 0
+            if self.verbose: print("Starting Binary Search...")
             while not criterion and search_iter < self.max_search_iter:
                 lbda_new = (lbda_min + lbda_max) / 2
 
-                if self.verbose: print("Testing new Fair Lambda: %0.08f in iteration #%0.0f" % (lbda_new, search_iter))
+                if self.verbose:
+                    print(10*'-'+"Iteration #%0.0f" % search_iter + 10*'-')
+                    print("Testing new Lambda: %0.4f" % lbda_new)
 
                 new_rd, new_alpha = learn(lbda_new, None)
                 if np.abs(new_rd) < np.abs(best_fair_measure):
@@ -158,8 +162,12 @@ class SearchFair(BaseEstimator):
                     criterion = True
 
                 search_iter += 1
+            if search_iter==self.max_search_iter and self.verbose:
+                print("Hit maximum iterations of Binary Search.")
+            elif self.verbose:
+                print("Sufficient fairness obtained before maximum iterations were reached.")
 
-        if self.verbose: print("Found Lambda: %0.08f" % best_lbda)
+        if self.verbose: print(10*'-'+"Found Lambda %0.4f with fairness %0.4f" % (best_lbda, best_fair_measure)+10*'-')
         self.coef_ = best_alpha.copy()
 
         return self
@@ -285,38 +293,33 @@ class SearchFair(BaseEstimator):
                 self.loss = (1/self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var))) + \
                                 self.fair_reg_cparam * fairness_relaxation
             else:
-                part1 = (1 / self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var)))
-                part2 = self.fair_reg_cparam * fairness_relaxation
-                part3 = self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
-
-                self.loss = part1+part2+part3
-
-                print("Is part1 DPP? ", part1.is_dcp(dpp=True))
-                print("Is part 2 DPP? ", part2.is_dcp(dpp=True))
-                print("Is relax DPP? ", fairness_relaxation.is_dcp(dpp=True))
-                print("Is part 3 DPP? ", part3.is_dcp(dpp=True))
-
+                self.loss = (1 / self.nmb_pts) * cp.sum(self.loss_func(cp.multiply(self.y_train.reshape(-1, 1), self.kernel_matrix @ self.alpha_var))) + \
+                            self.fair_reg_cparam * fairness_relaxation +  \
+                            self.reg_beta * cp.square(cp.norm(self.alpha_var, 2))
 
         self.prob = cp.Problem(cp.Minimize(self.loss))
-        print("Bound is", bound)
-        print("and fairness reg is ", self.fairness_lambda )
-        print("Is DPP? ", self.prob.is_dcp(dpp=True))
-        print("Is DCP? ", self.prob.is_dcp(dpp=False))
 
     def optimize(self):
+        """Conduct the optimization of the created problem.
+        """
 
+        # Compute and initialize kernel matrix
         self.K_sim = self.kernel_function(self.x_train, self.x_train[self.reason_pts_index])
         self.kernel_matrix.value = self.K_sim
         self.fair_reg_cparam.value = self.fairness_lambda
 
+        if self.verbose == 2:
+            verbose = True
+        else:
+            verbose = False
         if self.solver == 'SCS':
-            self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
+            self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=verbose, warm_start=True)
         elif self.solver == 'ECOS':
             try:
-                self.prob.solve(solver=cp.ECOS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
+                self.prob.solve(solver=cp.ECOS, max_iters=self.max_iter, verbose=verbose, warm_start=True)
             except Exception as e:
-                self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=self.verbose, warm_start=True)
-        if self.verbose:
+                self.prob.solve(solver=cp.SCS, max_iters=self.max_iter, verbose=verbose, warm_start=True)
+        if verbose:
             print('status %s ' % self.prob.status)
             print('value %s ' % self.prob.value)
         self.coef_ = self.alpha_var.value.squeeze()
