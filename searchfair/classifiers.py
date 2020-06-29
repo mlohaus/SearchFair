@@ -57,7 +57,7 @@ class SearchFair(BaseEstimator):
 
     """
 
-    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_min=0, lambda_max=1, max_iter=3000, reason_points=0.7, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
+    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_min=0, lambda_max=1, max_iter=3000, reason_points=0.5, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
 
         self.reg_beta = reg_beta
         self.fairness_notion = fairness_notion
