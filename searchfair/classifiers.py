@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-__all__ = ['SearchFair', 'ConstantClassifier']
+__all__ = ['SearchFair']
 
 from sklearn.model_selection import KFold
 from sklearn.base import BaseEstimator
@@ -29,8 +29,6 @@ class SearchFair(BaseEstimator):
         For kernel='rbf', gamma is the kernel width, for kernel='poly', gamma is the degree.
     loss_name: string
         The name of the loss used. Possible values: 'hinge', 'logistic', 'squared', 'exponential'
-    lambda_min: float
-        The value of lambda_min for the start of the binary search.
     lambda_max: float
         The value of lambda_max for the start of the binary search.
     max_iter: int
@@ -57,7 +55,7 @@ class SearchFair(BaseEstimator):
 
     """
 
-    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_min=0, lambda_max=1, max_iter=3000, reason_points=0.5, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
+    def __init__(self, fairness_notion='DDP', fairness_regularizer='wu', wu_bound='hinge', reg_beta=0.001, kernel='linear', gamma=None, loss_name='hinge', lambda_max=1, max_iter=3000, reason_points=0.5, stop_criterion=0.01, max_search_iter=10, solver='SCS', verbose=False):
 
         self.reg_beta = reg_beta
         self.fairness_notion = fairness_notion
@@ -67,7 +65,7 @@ class SearchFair(BaseEstimator):
         self.verbose = verbose
         self.stop_criterion = stop_criterion
         self.reason_points = reason_points
-        self.lambda_min, self.lambda_max = lambda_min, lambda_max
+        self.lambda_max = lambda_max
         self.wu_bound = wu_bound
         self.fairness_regularizer = fairness_regularizer
         self.wu_bound = wu_bound
@@ -98,18 +96,17 @@ class SearchFair(BaseEstimator):
 
         if self.verbose:
             print("Preprocessing...")
-            print("Compilation of CVXPY (might take a while for v1.1)")
-        self.preprocess()
+        self._preprocess()
 
-        lbda_min, lbda_max = self.lambda_min, self.lambda_max
+        lbda_min, lbda_max = 0, self.lambda_max
 
         def learn(reg, bound='upper'):
             # If bound is None, we have decided which one to use, and we are in the middle of the binary search
 
             self.fairness_lambda = reg
             if bound is not None:
-                self.construct_problem(bound=bound)
-            self.optimize()
+                self._construct_problem(bound=bound)
+            self._optimize()
             DDP, DEO = self.compute_fairness_measures(self.predict(x_train), y_train, s_train)
             if self.fairness_notion == 'DDP':
                 fair_value = DDP
@@ -191,7 +188,10 @@ class SearchFair(BaseEstimator):
         y_hat = np.dot(self.coef_, np.transpose(kernel_matr))
         return np.sign(y_hat)
 
-    def preprocess(self):
+    def _preprocess(self):
+        """Setting the attributes loss_func, kernel_function, and weight_vector,
+        which depends on the fairness notion, and is used in fairness related objects.
+        """
         self.coef_ = None
         self.fairness_lambda = 0
         if self.loss_name == 'logistic':
@@ -262,7 +262,10 @@ class SearchFair(BaseEstimator):
             self.reason_pts_index = list(range(self.reason_points))
         self.nmb_reason_pts = len(self.reason_pts_index)
 
-    def construct_problem(self, bound='upper'):
+    def _construct_problem(self, bound='upper'):
+        """ Construct the cvxpy minimization problem.
+        It depends on the fairness regularizer chosen.
+        """
 
         # Variable to optimize
         self.alpha_var = cp.Variable((len(self.reason_pts_index), 1))
@@ -300,8 +303,9 @@ class SearchFair(BaseEstimator):
 
         self.prob = cp.Problem(cp.Minimize(self.loss))
 
-    def optimize(self):
-        """Conduct the optimization of the created problem.
+    def _optimize(self):
+        """Conduct the optimization of the created problem by using ECOS or SCS
+        with cvxpy. 
         """
 
         # Compute and initialize kernel matrix
@@ -390,21 +394,3 @@ class SearchFair(BaseEstimator):
         tn, fp, fn, tp = confusion_matrix(y_true, y_predicted).ravel()
         tpr = tp / (tp+fn)
         return tpr
-
-class ConstantClassifier():
-
-    def __init__(self):
-        self.opt_pred = 0
-
-    def fit(self, x_train, y_train):
-
-        if np.sum(y_train)>0:
-            self.opt_pred = 1
-        else:
-            self.opt_pred = -1
-
-
-    def predict(self, x_test):
-        y_pred = np.ones(shape=(x_test.shape[0],))
-
-        return self.opt_pred*y_pred
