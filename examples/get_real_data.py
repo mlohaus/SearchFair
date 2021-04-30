@@ -2,6 +2,7 @@
 import os
 from random import shuffle
 import pandas as pd
+import numpy as np
 
 def get_celebA_data(load_data_size=None):
     """Load the celebA dataset.
@@ -49,7 +50,10 @@ def get_celebA_data(load_data_size=None):
 
     X = X[:, (X != 0).any(axis=0)]
 
-    return X, y, s
+    #remove duplicates
+    _, unique_indices = np.unique(X, axis=0, return_index=True)
+
+    return X[unique_indices,:], y[unique_indices], s[unique_indices]
 
 def get_adult_data(load_data_size=None):
     """Load the Adult dataset.
@@ -71,44 +75,38 @@ def get_adult_data(load_data_size=None):
     """
 
     def mapping(tuple):
-    	# age, 37
-    	tuple['age'] = 1 if tuple['age'] > 37 else 0
-    	# workclass
-    	tuple['workclass'] = 'NonPrivate' if tuple['workclass'] != 'Private' else 'Private'
-    	# edunum
-    	tuple['education-num'] = 1 if tuple['education-num'] > 9 else 0
-    	# maritial statue
-    	tuple['marital-status'] = "Marriedcivspouse" if tuple['marital-status'] == "Married-civ-spouse" else "nonMarriedcivspouse"
-    	# occupation
-    	tuple['occupation'] = "Craftrepair" if tuple['occupation'] == "Craft-repair" else "NonCraftrepair"
-    	# relationship
-    	tuple['relationship'] = "NotInFamily" if tuple['relationship'] == "Not-in-family" else "InFamily"
-    	# race
-    	tuple['race'] = 'NonWhite' if tuple['race'] != "White" else 'White'
-    	# hours per week
-    	tuple['hours-per-week'] = 1 if tuple['hours-per-week'] > 40 else 0
-    	# native country
-    	tuple['native-country'] = "US" if tuple['native-country'] == "United-States" else "NonUS"
-    	return tuple
+        # native country
+        tuple['native-country'] = "US" if tuple['native-country'] == "United-States" else "NonUS"
+        # education
+        if tuple['education'] in ["Preschool", "1st-4th", "5th-6th", "7th-8th"]:
+            tuple['education'] = "prim-middle-school"
+        if tuple['education'] in ["9th", "10th", "11th", "12th"]:
+            tuple['education'] = "high-school"
+        return tuple
 
 
     src_path = os.path.dirname(os.path.realpath(__file__))
     df = pd.read_csv(os.path.join(src_path, '../data/adult/adult.csv'))
-    df = df.drop(['fnlwgt', 'education', 'capital-gain', 'capital-loss'], axis=1)
+    df = df.drop(['race' ], axis=1)
+    df = df.replace("?", np.nan)
+    df = df.dropna()
     df = df.apply(mapping, axis=1)
 
     sensitive_attr_map = {'Male': 1, 'Female': -1}
     label_map = {'>50K': 1, '<=50K': -1}
 
-    x_vars = ['age','workclass','education-num','marital-status','occupation','relationship','race','hours-per-week','native-country']
-
+    attrs = ['workclass', 'education', 'marital-status', 'occupation', 'relationship', 'native-country']
+    int_attrs = ['age', 'education-num', 'capital-gain', 'capital-loss', 'hours-per-week', 'fnlwgt']
+    
     s = df['sex'].map(sensitive_attr_map).astype(int)
     y = df['income'].map(label_map).astype(int)
 
 
     x = pd.DataFrame(data=None)
-    for x_var in x_vars:
-    	x = pd.concat([x, pd.get_dummies(df[x_var],prefix=x_var, drop_first=False)], axis=1)
+    for x_var in attrs:
+        x = pd.concat([x, pd.get_dummies(df[x_var], prefix=x_var, drop_first=False)], axis=1)
+    for x_var in int_attrs:
+        x = pd.concat([x, normalize(x=df[x_var])], axis=1)
 
     X = x.to_numpy()
     s = s.to_numpy()
@@ -129,7 +127,10 @@ def get_adult_data(load_data_size=None):
 
     X = X[:, (X != 0).any(axis=0)]
 
-    return X, y, s
+    #remove duplicates
+    _, unique_indices = np.unique(X, axis=0, return_index=True)
+
+    return X[unique_indices,:], y[unique_indices], s[unique_indices]
 
 def normalize(x):
 	# scale to [-1, 1]
